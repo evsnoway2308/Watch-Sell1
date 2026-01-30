@@ -1,4 +1,4 @@
-package com.example.demo.dto.request;
+package com.example.demo.dto.request.auth;
 import com.example.demo.validator.PasswordMatches;
 import lombok.Getter;
 import lombok.Setter;

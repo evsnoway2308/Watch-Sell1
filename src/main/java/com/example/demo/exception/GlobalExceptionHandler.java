@@ -13,7 +13,7 @@ import org.springframework.http.HttpStatus;
 public class GlobalExceptionHandler {
     @ExceptionHandler(AppException.class)
     public ResponseEntity<APIError> handleAppException(AppException ex) {
-        APIError errorResponse = new APIError(ex.getMessage(), ex.getErrorCode());
+        APIError errorResponse = new APIError(ex.getMessage(), HttpStatus.BAD_REQUEST.value());
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
 }

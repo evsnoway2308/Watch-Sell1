@@ -1,6 +1,6 @@
 package com.example.demo.validator;
 
-import com.example.demo.dto.request.SignUpRequest;
+import com.example.demo.dto.request.auth.SignUpRequest;
 
 public class PasswordMatchesValidator implements jakarta.validation.ConstraintValidator<PasswordMatches, SignUpRequest> {
  @Override
