@@ -27,10 +27,10 @@ import lombok.extern.slf4j.Slf4j;
 public class JwtServiceImpl implements JwtService {
     @Value("${jwt.expiration-time}")
     private long expirationTime;
-    @Value("${jwt.expir-days}")
-    private long expirDays;
+    @Value("${jwt.expire-days}")
+    private long expireDays;
     @Value("${jwt.access-key}")
-    private String acessKey;
+    private String accessKey;
     @Value("${jwt.refresh-key}")
     private String refreshKey;
 
@@ -96,7 +96,7 @@ public class JwtServiceImpl implements JwtService {
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(username)
-                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 24 * expirDays))
+                .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 24 * expireDays))
                 .signWith(getKey(TokenType.REFRESH_TOKEN), SignatureAlgorithm.HS256)
                 .compact();
     }
@@ -104,7 +104,7 @@ public class JwtServiceImpl implements JwtService {
     private Key getKey(TokenType tokenType) {
         switch (tokenType) {
             case ACCESS_TOKEN:
-                return Keys.hmacShaKeyFor(Decoders.BASE64.decode(acessKey));
+                return Keys.hmacShaKeyFor(Decoders.BASE64.decode(accessKey));
             case REFRESH_TOKEN:
 
                 return Keys.hmacShaKeyFor(Decoders.BASE64.decode(refreshKey));

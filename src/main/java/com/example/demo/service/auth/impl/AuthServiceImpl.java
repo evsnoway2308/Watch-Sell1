@@ -137,7 +137,7 @@ public class AuthServiceImpl implements AuthService {
             String username = jwtService.extractUsername(refreshToken, TokenType.REFRESH_TOKEN);
             User user = userRepository.findByUsername(username);
             if (user == null) {
-                throw new AppException("User not found");
+                throw new AppException("Người dùng không tồn tại");
             }
             List<String> authorities = new ArrayList<>();
             authorities.add(user.getRole().getName());
@@ -158,38 +158,50 @@ public class AuthServiceImpl implements AuthService {
     public TokenResponse googleLogin(SocialLoginRequest req) {
         try {
             GoogleUserInfo googleUser = getGoogleUserInfo(req.getCode());
+            System.out.println("Google user info retrieved: " + googleUser.getEmail());
 
             User user = userRepository.findByEmail(googleUser.getEmail()).orElseGet(() -> {
+                System.out.println("User not found, creating new user for email: " + googleUser.getEmail());
+                
                 User newUser = new User();
                 newUser.setEmail(googleUser.getEmail());
                 newUser.setName(googleUser.getName());
                 newUser.setUsername(googleUser.getEmail());
                 newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
                 newUser.setAvatarUrl(googleUser.getPicture());
+                
                 Role role = roleRepository.findByName("USER").orElseGet(() -> {
+                     System.out.println("Role USER not found, creating new role");
                      Role newRole = new Role();
                      newRole.setName("USER");
-                     return roleRepository.save(newRole);
+                     Role savedRole = roleRepository.save(newRole);
+                     System.out.println("Role saved with ID: " + savedRole.getId());
+                     return savedRole;
                 });
                 newUser.setRole(role);
-
-                return userRepository.save(newUser);
+                
+                System.out.println("Saving new user to database...");
+                User savedUser = userRepository.save(newUser);
+                System.out.println("User saved successfully with ID: " + savedUser.getId());
+                return savedUser;
             });
 
+            System.out.println("User retrieved/created with ID: " + user.getId());
             List<String> authorities = Collections.singletonList(user.getRole().getName());
 
             String accessToken = jwtService.generateAccessToken(user.getUsername(), authorities);
             String refreshToken = jwtService.generateRefreshToken(user.getUsername(), authorities);
-
-
 
             return TokenResponse.builder()
                     .accessToken(accessToken)
                     .refreshToken(refreshToken)
                     .build();
         } catch (AppException e) {
+            System.err.println("AppException in googleLogin: " + e.getMessage());
             throw e;
         } catch (Exception e) {
+            System.err.println("Exception in googleLogin: " + e.getMessage());
+            e.printStackTrace();
             throw new AppException("Lỗi không xác định khi đăng nhập Google: " + e.getMessage());
         }
     }
@@ -227,7 +239,7 @@ public class AuthServiceImpl implements AuthService {
                     GoogleUserInfo.class);
 
             if (userInfoResponse.getBody() == null) {
-                throw new AppException("Không thể lấy thông tin user từ Google");
+                throw new AppException("Không thể lấy thông tin người dùng từ Google");
             }
 
             return userInfoResponse.getBody();
