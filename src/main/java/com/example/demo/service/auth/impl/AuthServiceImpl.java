@@ -120,7 +120,7 @@ public class AuthServiceImpl implements AuthService {
                     .collect(Collectors.toList()));
             SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (Exception e) {
-            throw new AppException("Tên đăng nhập hoặc mật khẩu không đúng: " + e.getMessage());
+            throw new AppException("Tên đăng nhập hoặc mật khẩu không đúng");
         }
 
         String accessToken = jwtService.generateAccessToken(request.getUsername(), authorities);
