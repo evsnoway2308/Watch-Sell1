@@ -8,21 +8,20 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 
+import jakarta.persistence.*;
+import lombok.*;
+import java.util.List;
+
 @Entity
 @Table(name = "users")
-
 @Getter
 @Setter
 @AllArgsConstructor
-
+@NoArgsConstructor
 public class User {
-    public User() {
 
-    }
-
-
-    @jakarta.persistence.Id
-    @GeneratedValue(strategy = jakarta.persistence.GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, unique = true)
@@ -43,9 +42,16 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
-
-
-    @jakarta.persistence.ManyToOne
-    @jakarta.persistence.JoinColumn(name = "role_id")
+    @ManyToOne
+    @JoinColumn(name = "role_id")
     private Role role;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<Address> addresses;
+
+    @OneToMany(mappedBy = "user")
+    private List<Order> orders;
+
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private Cart cart;
 }
