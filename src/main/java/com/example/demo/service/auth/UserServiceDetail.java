@@ -25,12 +25,6 @@ public class UserServiceDetail implements UserDetailsService {
         return new org.springframework.security.core.userdetails.User(
                 user.getUsername(),
                 user.getPassword(),
-                Collections.singletonList(new SimpleGrantedAuthority(user.getRole().getName()))
-        );
-    }
-
-    public UserServiceDetail userDetailsService() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'userDetailsService'");
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().getName())));
     }
 }

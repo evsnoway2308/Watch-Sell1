@@ -8,5 +8,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long> {
-    Page<Product> findAllByDeleteIsFalse(Pageable pageable);
+    Page<Product> findAllByIsDeletedIsFalse(Pageable pageable);
 }

@@ -34,7 +34,7 @@ public class CustomizeRequestFiter extends OncePerRequestFilter {
         log.info("Incoming request: {} {}", request.getMethod(), request.getRequestURI());
 
         String authHeader = request.getHeader("Authorization");
-        
+
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             log.info("Authorization token present: {}", token);
@@ -44,25 +44,25 @@ public class CustomizeRequestFiter extends OncePerRequestFilter {
                 log.info("Extracted username from token: {}", username);
 
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    
-                    UserDetails userDetails = userServiceDetail.userDetailsService().loadUserByUsername(username);
+
+                    UserDetails userDetails = userServiceDetail.loadUserByUsername(username);
 
                     UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
-                    
+
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
                     securityContext.setAuthentication(authenticationToken);
-                    
+
                     SecurityContextHolder.setContext(securityContext);
                 }
-                
+
             } catch (Exception e) {
                 log.error("Token invalid or expired: {}", e.getMessage());
                 SecurityContextHolder.clearContext();
             }
         }
-        
+
         filterChain.doFilter(request, response);
     }
 }

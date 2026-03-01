@@ -33,7 +33,8 @@ public class Product {
 
     private Boolean available = true;
 
-    private Boolean delete = false;
+    @Column(name = "is_deleted")
+    private Boolean isDeleted = false;
 
     @ManyToOne
     @JoinColumn(name = "category_id")
