@@ -49,6 +49,7 @@ public class AppConfig {
                     "/v3/api-docs/**",
                     "/swagger-ui/**",
                     "/swagger-ui.html"
+                    
             ).permitAll()
                 .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
