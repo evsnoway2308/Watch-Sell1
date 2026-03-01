@@ -5,11 +5,13 @@ import lombok.Getter;
 
 @Getter
 @Builder
-public class ProfileResponse {
-    private String name;
+public class UserResponse {
+    private Long id;
     private String username;
+    private String name;
     private String email;
     private String phonenumber;
-    private String avatarUrl;
     private String role;
+    private String status;
+    private String avatarUrl;
 }

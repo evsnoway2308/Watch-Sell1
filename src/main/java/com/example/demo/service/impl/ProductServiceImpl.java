@@ -17,15 +17,21 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.demo.repository.CartItemRepository;
+import com.example.demo.repository.OrderItemRepository;
 
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ProductServiceImpl implements ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final CartItemRepository cartItemRepository;
+    private final OrderItemRepository orderItemRepository;
 
     @Override
     @Transactional
@@ -58,17 +64,84 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Page<ProductResponse> getAllProducts(int page, int size) {
+    public Page<ProductResponse> getAllProducts(int page, int size, Long categoryId) {
         Pageable pageable = PageRequest.of(page, size);
-        Page<Product> productPage = productRepository.findAllByIsDeletedIsFalse(pageable);
+        Page<Product> productPage;
+        if (categoryId != null) {
+            productPage = productRepository.findByCategoryIdAndIsDeletedIsFalse(categoryId, pageable);
+        } else {
+            productPage = productRepository.findAllByIsDeletedIsFalse(pageable);
+        }
         return productPage.map(this::mapToProductResponse);
     }
 
     @Override
     public ProductDetailResponse getProductById(Long id) {
         Product product = productRepository.findById(id)
+                .filter(p -> !p.getIsDeleted())
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
         return mapToProductDetailResponse(product);
+    }
+
+    @Override
+    @Transactional
+    public void updateProduct(Long id, ProductRequest request) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+
+        Category category = categoryRepository.findById(request.getCategoryId())
+                .orElseThrow(() -> new RuntimeException("Category not found with id: " + request.getCategoryId()));
+
+        product.setName(request.getName());
+        product.setDescription(request.getDescription());
+        product.setPrice(request.getPrice());
+        product.setImageUrl(request.getImageUrl());
+        product.setStock(request.getStock());
+        product.setCategory(category);
+
+        if (request.getImages() != null) {
+            // Simple approach: replace all images
+            product.getImages().clear();
+            List<ProductImage> productImages = request.getImages().stream()
+                    .map(url -> {
+                        ProductImage pi = new ProductImage();
+                        pi.setImageUrl(url);
+                        pi.setProduct(product);
+                        return pi;
+                    }).collect(Collectors.toList());
+            product.getImages().addAll(productImages);
+        }
+
+        productRepository.save(product);
+    }
+
+    @Override
+    @Transactional
+    public void deleteProduct(Long id) {
+        log.info("Physical delete requested for product with id: {}", id);
+
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+
+        // Check if product has orders
+        if (orderItemRepository.existsByProductId(id)) {
+            log.warn(
+                    "Cannot physically delete product with id: {} as it has associated orders. Falling back to soft delete.",
+                    id);
+            product.setIsDeleted(true);
+            product.setAvailable(false);
+            productRepository.save(product);
+            return;
+        }
+
+        // Delete from cart items first (constraint)
+        log.info("Deleting cart items for product id: {}", id);
+        cartItemRepository.deleteByProductId(id);
+
+        // Physical delete (images and reviews are cascaded)
+        log.info("Physically deleting product with id: {}", id);
+        productRepository.delete(product);
+        log.info("Product with id: {} successfully deleted from database", id);
     }
 
     private ProductResponse mapToProductResponse(Product product) {

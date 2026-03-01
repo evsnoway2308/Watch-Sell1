@@ -48,9 +48,6 @@ import com.example.demo.dto.response.auth.GoogleUserInfo;
 import com.example.demo.dto.response.auth.GoogleTokenResponse;
 import com.example.demo.repository.RoleRepository;
 
-
-
-
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
@@ -77,13 +74,11 @@ public class AuthServiceImpl implements AuthService {
     @Autowired
     private RoleRepository roleRepository;
 
-
-
     @Override
     public User signUp(SignUpRequest req) {
 
         if (userRepository.existsByUsername(req.getUsername()) ||
-            userRepository.existsByEmail(req.getEmail())) {
+                userRepository.existsByEmail(req.getEmail())) {
             throw new AppException("Tên đăng nhập hoặc email đã tồn tại");
         }
 
@@ -114,7 +109,6 @@ public class AuthServiceImpl implements AuthService {
                             request.getUsername(),
                             request.getPassword()));
 
-            
             authorities.addAll(authentication.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority)
                     .collect(Collectors.toList()));
@@ -135,10 +129,8 @@ public class AuthServiceImpl implements AuthService {
     public TokenResponse getRefreshToken(String refreshToken) {
         try {
             String username = jwtService.extractUsername(refreshToken, TokenType.REFRESH_TOKEN);
-            User user = userRepository.findByUsername(username);
-            if (user == null) {
-                throw new AppException("Người dùng không tồn tại");
-            }
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new AppException("Người dùng không tồn tại"));
             List<String> authorities = new ArrayList<>();
             authorities.add(user.getRole().getName());
             String accessToken = jwtService.generateAccessToken(user.getUsername(), authorities);
@@ -162,24 +154,24 @@ public class AuthServiceImpl implements AuthService {
 
             User user = userRepository.findByEmail(googleUser.getEmail()).orElseGet(() -> {
                 System.out.println("User not found, creating new user for email: " + googleUser.getEmail());
-                
+
                 User newUser = new User();
                 newUser.setEmail(googleUser.getEmail());
                 newUser.setName(googleUser.getName());
                 newUser.setUsername(googleUser.getEmail());
                 newUser.setPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
                 newUser.setAvatarUrl(googleUser.getPicture());
-                
+
                 Role role = roleRepository.findByName("USER").orElseGet(() -> {
-                     System.out.println("Role USER not found, creating new role");
-                     Role newRole = new Role();
-                     newRole.setName("USER");
-                     Role savedRole = roleRepository.save(newRole);
-                     System.out.println("Role saved with ID: " + savedRole.getId());
-                     return savedRole;
+                    System.out.println("Role USER not found, creating new role");
+                    Role newRole = new Role();
+                    newRole.setName("USER");
+                    Role savedRole = roleRepository.save(newRole);
+                    System.out.println("Role saved with ID: " + savedRole.getId());
+                    return savedRole;
                 });
                 newUser.setRole(role);
-                
+
                 System.out.println("Saving new user to database...");
                 User savedUser = userRepository.save(newUser);
                 System.out.println("User saved successfully with ID: " + savedUser.getId());
@@ -248,5 +240,4 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException("Lỗi đăng nhập Google: " + e.getMessage());
         }
     }
-    }
-
+}

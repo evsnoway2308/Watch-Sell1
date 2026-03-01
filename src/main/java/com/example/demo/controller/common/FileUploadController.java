@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequestMapping("/api/upload")
 @RequiredArgsConstructor
 @Tag(name = "Upload Controller", description = "API upload hình ảnh")
-@Slf4j(topic ="FILE-UPLOAD-CONTROLLER" )
+@Slf4j(topic = "FILE-UPLOAD-CONTROLLER")
 public class FileUploadController {
 
     private final StorageService storageService;
@@ -36,7 +36,7 @@ public class FileUploadController {
 
     @Operation(summary = "Upload Product Image", description = "Upload ảnh sản phẩm (Lưu vào folder products)")
     @PostMapping(value = "/product", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> uploadProductImage(@RequestParam("file") MultipartFile file) {
         String url = storageService.uploadFile(file, "products");
         return ResponseEntity.ok(Map.of("url", url));

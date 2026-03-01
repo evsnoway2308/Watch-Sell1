@@ -42,6 +42,9 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    @Column(nullable = false)
+    private String status = "ACTIVE";
+
     @ManyToOne
     @JoinColumn(name = "role_id")
     private Role role;
