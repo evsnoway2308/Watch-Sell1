@@ -6,6 +6,7 @@ import com.example.demo.dto.request.auth.SocialLoginRequest;
 import com.example.demo.dto.response.auth.TokenResponse;
 import com.example.demo.model.User;
 import com.example.demo.service.auth.AuthService;
+import com.example.demo.service.common.UserService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
+import com.example.demo.dto.response.ProfileResponse;
 
 @RequiredArgsConstructor
 @RestController
@@ -23,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 public class AuthController {
 
     private final AuthService authService;
+    private final UserService userService;
 
     @PostMapping("/signup")
     public ResponseEntity<Long> signup(@RequestBody @Valid SignUpRequest req) {
@@ -40,4 +45,11 @@ public class AuthController {
         TokenResponse tokenResponse = authService.googleLogin(req);
         return ResponseEntity.ok(tokenResponse);
     }
+
+    @GetMapping("/profile")
+    public ResponseEntity<ProfileResponse> getProfile() {
+String name = SecurityContextHolder.getContext().getAuthentication().getName();
+        return ResponseEntity.ok(userService.getProfile(name));
+    }
+
 }
