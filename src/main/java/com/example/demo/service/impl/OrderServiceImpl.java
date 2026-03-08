@@ -27,13 +27,6 @@ public class OrderServiceImpl implements OrderService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Cart cart = cartRepository.findByUser(user)
-                .orElseThrow(() -> new RuntimeException("Cart not found"));
-
-        if (cart.getItems().isEmpty()) {
-            throw new RuntimeException("Cart is empty");
-        }
-
         Order order = new Order();
         order.setUser(user);
         order.setOrderDate(new Date());
@@ -43,36 +36,67 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
         double totalAmount = 0;
 
-        for (CartItem cartItem : cart.getItems()) {
-            Product product = cartItem.getProduct();
+        // Check if items are provided in the request (Direct Checkout / Buy Now)
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            for (OrderItemRequest itemReq : request.getItems()) {
+                Product product = productRepository.findById(itemReq.getProductId())
+                        .orElseThrow(() -> new RuntimeException("Product not found: " + itemReq.getProductId()));
 
-            if (product.getStock() < cartItem.getQuantity()) {
-                throw new RuntimeException("Not enough stock for product: " + product.getName());
+                if (product.getStock() < itemReq.getQuantity()) {
+                    throw new RuntimeException("Not enough stock for product: " + product.getName());
+                }
+
+                // Deduct stock
+                product.setStock(product.getStock() - itemReq.getQuantity());
+                productRepository.save(product);
+
+                OrderItem orderItem = new OrderItem();
+                orderItem.setOrder(order);
+                orderItem.setProduct(product);
+                orderItem.setQuantity(itemReq.getQuantity());
+                orderItem.setPrice(product.getPrice());
+
+                orderItems.add(orderItem);
+                totalAmount += product.getPrice() * itemReq.getQuantity();
+            }
+        } else {
+            // Fallback to cart-based order
+            Cart cart = cartRepository.findByUser(user)
+                    .orElseThrow(() -> new RuntimeException("Cart not found"));
+
+            if (cart.getItems().isEmpty()) {
+                throw new RuntimeException("Cart is empty");
             }
 
-            // Deduct stock
-            product.setStock(product.getStock() - cartItem.getQuantity());
-            productRepository.save(product);
+            for (CartItem cartItem : cart.getItems()) {
+                Product product = cartItem.getProduct();
 
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrder(order);
-            orderItem.setProduct(product);
-            orderItem.setQuantity(cartItem.getQuantity());
-            orderItem.setPrice(product.getPrice());
+                if (product.getStock() < cartItem.getQuantity()) {
+                    throw new RuntimeException("Not enough stock for product: " + product.getName());
+                }
 
-            orderItems.add(orderItem);
-            totalAmount += product.getPrice() * cartItem.getQuantity();
+                // Deduct stock
+                product.setStock(product.getStock() - cartItem.getQuantity());
+                productRepository.save(product);
+
+                OrderItem orderItem = new OrderItem();
+                orderItem.setOrder(order);
+                orderItem.setProduct(product);
+                orderItem.setQuantity(cartItem.getQuantity());
+                orderItem.setPrice(product.getPrice());
+
+                orderItems.add(orderItem);
+                totalAmount += product.getPrice() * cartItem.getQuantity();
+            }
+
+            // Clear cart ONLY for cart-based orders
+            cart.getItems().clear();
+            cartRepository.save(cart);
         }
 
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);
 
-        Order savedOrder = orderRepository.save(order);
-
-        // Clear cart
-        cart.getItems().clear();
-        cartRepository.save(cart);
-
-        return savedOrder;
+        return orderRepository.save(order);
     }
 }
