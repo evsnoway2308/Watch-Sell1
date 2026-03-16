@@ -45,6 +45,10 @@ public class CartServiceImpl implements CartService {
         CartItem cartItem = cartItemRepository.findByCartAndProduct(cart, product)
                 .orElse(new CartItem(null, 0, cart, product));
 
+        if (cartItem.getQuantity() + quantity > product.getStock()) {
+            throw new RuntimeException("Số lượng yêu cầu vượt quá số lượng hàng trong kho");
+        }
+
         cartItem.setQuantity(cartItem.getQuantity() + quantity);
         cartItemRepository.save(cartItem);
     }
@@ -58,6 +62,10 @@ public class CartServiceImpl implements CartService {
 
         CartItem cartItem = cartItemRepository.findByCartAndProduct(cart, product)
                 .orElseThrow(() -> new RuntimeException("Item not in cart"));
+
+        if (quantity > product.getStock()) {
+            throw new RuntimeException("Số lượng yêu cầu vượt quá số lượng hàng trong kho");
+        }
 
         if (quantity <= 0) {
             cartItemRepository.delete(cartItem);
@@ -129,6 +137,7 @@ public class CartServiceImpl implements CartService {
                 .productPrice(product.getPrice())
                 .productImageUrl(product.getImageUrl())
                 .quantity(item.getQuantity())
+                .productStock(product.getStock())
                 .subTotal(subTotal)
                 .build();
     }
