@@ -30,8 +30,20 @@ public class CartServiceImpl implements CartService {
     private final UserRepository userRepository;
 
     @Override
+    @Transactional
     public CartResponse getCart() {
         Cart cart = getOrCreateCart();
+
+        List<CartItem> itemsToRemove = cart.getItems().stream()
+                .filter(item -> Boolean.TRUE.equals(item.getProduct().getIsDeleted()))
+                .collect(Collectors.toList());
+
+        if (!itemsToRemove.isEmpty()) {
+            cart.getItems().removeAll(itemsToRemove);
+            cartItemRepository.deleteAll(itemsToRemove);
+            cart = cartRepository.save(cart);
+        }
+
         return mapToCartResponse(cart);
     }
 
