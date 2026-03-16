@@ -23,4 +23,24 @@ public class OrderController {
         Order order = orderService.createOrder(authentication.getName(), request);
         return ResponseEntity.ok(order);
     }
+
+    @GetMapping("/my-orders")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.List<Order>> getMyOrders(Authentication authentication) {
+        return ResponseEntity.ok(orderService.getMyOrders(authentication.getName()));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<java.util.List<Order>> getAllOrders() {
+        return ResponseEntity.ok(orderService.getAllOrders());
+    }
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Order> updateOrderStatus(@PathVariable Long id, @RequestBody String status) {
+        // Remove quotes if status is sent as a quoted string
+        String cleanStatus = status.replace("\"", "");
+        return ResponseEntity.ok(orderService.updateOrderStatus(id, cleanStatus));
+    }
 }

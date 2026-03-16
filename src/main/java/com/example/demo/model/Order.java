@@ -25,6 +25,12 @@ public class Order {
 
     private String shippingAddress;
 
+    private String phoneNumber;
+
+    private String notes;
+
+    private String paymentMethod;
+
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User user;

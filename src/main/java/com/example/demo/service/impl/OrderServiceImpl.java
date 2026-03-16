@@ -32,6 +32,9 @@ public class OrderServiceImpl implements OrderService {
         order.setUser(user);
         order.setOrderDate(new Date());
         order.setShippingAddress(request.getShippingAddress());
+        order.setPhoneNumber(request.getPhoneNumber());
+        order.setNotes(request.getNotes());
+        order.setPaymentMethod(request.getPaymentMethod());
         order.setStatus("PENDING");
 
         List<OrderItem> orderItems = new ArrayList<>();
@@ -98,6 +101,29 @@ public class OrderServiceImpl implements OrderService {
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);
 
+        return orderRepository.save(order);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Order> getMyOrders(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return orderRepository.findByUserOrderByOrderDateDesc(user);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Order> getAllOrders() {
+        return orderRepository.findAllByOrderByOrderDateDesc();
+    }
+
+    @Override
+    @Transactional
+    public Order updateOrderStatus(Long orderId, String status) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
+        order.setStatus(status);
         return orderRepository.save(order);
     }
 }
