@@ -31,6 +31,12 @@ public class Order {
 
     private String paymentMethod;
 
+    @Column(name = "payment_ref", unique = true)
+    private String paymentRef;
+
+    @Transient
+    private String qrCodeUrl;
+
     @ManyToOne
     @JoinColumn(name = "user_id")
     private User user;

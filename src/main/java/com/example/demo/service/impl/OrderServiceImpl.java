@@ -37,6 +37,12 @@ public class OrderServiceImpl implements OrderService {
         order.setPaymentMethod(request.getPaymentMethod());
         order.setStatus("PENDING");
 
+        // Generate random paymentRef for BANK_TRANSFER or SEPAY
+        if ("BANK_TRANSFER".equalsIgnoreCase(request.getPaymentMethod()) || "SEPAY".equalsIgnoreCase(request.getPaymentMethod())) {
+            String randomStr = java.util.UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+            order.setPaymentRef("DH" + randomStr);
+        }
+
         List<OrderItem> orderItems = new ArrayList<>();
         double totalAmount = 0;
 
@@ -101,7 +107,18 @@ public class OrderServiceImpl implements OrderService {
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);
 
-        return orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
+
+        // Generate QR Code URL for Bank Transfer
+        if ("BANK_TRANSFER".equalsIgnoreCase(savedOrder.getPaymentMethod()) || "SEPAY".equalsIgnoreCase(savedOrder.getPaymentMethod())) {
+            // Using VietQR format with SePay QR generator or VietQR directly.
+            // Bank: BIDV, Acc: 450630423, Name: NGUYEN DUC KHANH
+            String qrUrl = String.format("https://img.vietqr.io/image/BIDV-96247111204-compact2.png?amount=%d&addInfo=%s&accountName=NGUYEN%%20DUC%%20KHANH", 
+                    savedOrder.getTotalAmount().intValue(), savedOrder.getPaymentRef());
+            savedOrder.setQrCodeUrl(qrUrl);
+        }
+
+        return savedOrder;
     }
 
     @Override
