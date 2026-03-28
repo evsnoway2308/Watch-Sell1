@@ -20,4 +20,5 @@ public class ProductDetailResponse {
     private Double averageRating;
     private Integer reviewCount;
     private List<String> images;
+    private List<ReviewResponse> reviews;
 }

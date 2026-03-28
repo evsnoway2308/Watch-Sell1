@@ -4,12 +4,14 @@ import java.util.List;
 import com.example.demo.dto.request.ProductRequest;
 import com.example.demo.dto.response.ProductDetailResponse;
 import com.example.demo.dto.response.ProductResponse;
+import com.example.demo.dto.response.ReviewResponse;
 import com.example.demo.model.Category;
 import com.example.demo.model.Product;
 import com.example.demo.model.ProductImage;
 import com.example.demo.model.Review;
 import com.example.demo.repository.CategoryRepository;
 import com.example.demo.repository.ProductRepository;
+import com.example.demo.repository.ReviewRepository;
 import com.example.demo.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +34,7 @@ public class ProductServiceImpl implements ProductService {
     private final CategoryRepository categoryRepository;
     private final CartItemRepository cartItemRepository;
     private final OrderItemRepository orderItemRepository;
+    private final ReviewRepository reviewRepository;
 
     @Override
     @Transactional
@@ -166,6 +169,19 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private ProductDetailResponse mapToProductDetailResponse(Product product) {
+        java.util.List<ReviewResponse> reviewResponses = reviewRepository
+                .findByProductIdOrderByReviewDateDesc(product.getId())
+                .stream()
+                .map(r -> ReviewResponse.builder()
+                        .id(r.getId())
+                        .rating(r.getRating())
+                        .comment(r.getComment())
+                        .reviewDate(r.getReviewDate())
+                        .userName(r.getUser() != null ? r.getUser().getName() : "Ẩn danh")
+                        .userAvatar(r.getUser() != null ? r.getUser().getAvatarUrl() : null)
+                        .build())
+                .collect(Collectors.toList());
+
         return ProductDetailResponse.builder()
                 .id(product.getId())
                 .name(product.getName())
@@ -176,10 +192,11 @@ public class ProductServiceImpl implements ProductService {
                 .stock(product.getStock())
                 .available(product.getAvailable())
                 .averageRating(calculateAverageRating(product))
-                .reviewCount(product.getReviews() != null ? product.getReviews().size() : 0)
+                .reviewCount(reviewResponses.size())
                 .images(product.getImages().stream()
                         .map(ProductImage::getImageUrl)
                         .collect(Collectors.toList()))
+                .reviews(reviewResponses)
                 .build();
     }
 
