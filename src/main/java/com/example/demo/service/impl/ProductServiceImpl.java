@@ -64,11 +64,18 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Page<ProductResponse> getAllProducts(int page, int size, Long categoryId) {
+    public Page<ProductResponse> getAllProducts(int page, int size, Long categoryId, String keyword) {
         Pageable pageable = PageRequest.of(page, size);
         Page<Product> productPage;
-        if (categoryId != null) {
+
+        boolean hasKeyword = keyword != null && !keyword.trim().isEmpty();
+
+        if (categoryId != null && hasKeyword) {
+            productPage = productRepository.findByCategoryIdAndKeywordAndIsDeletedIsFalse(categoryId, keyword.trim(), pageable);
+        } else if (categoryId != null) {
             productPage = productRepository.findByCategoryIdAndIsDeletedIsFalse(categoryId, pageable);
+        } else if (hasKeyword) {
+            productPage = productRepository.findByKeywordAndIsDeletedIsFalse(keyword.trim(), pageable);
         } else {
             productPage = productRepository.findAllByIsDeletedIsFalse(pageable);
         }

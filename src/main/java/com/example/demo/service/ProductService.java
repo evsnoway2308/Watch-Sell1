@@ -6,7 +6,7 @@ import com.example.demo.dto.response.ProductResponse;
 import org.springframework.data.domain.Page;
 
 public interface ProductService {
-    Page<ProductResponse> getAllProducts(int page, int size, Long categoryId);
+    Page<ProductResponse> getAllProducts(int page, int size, Long categoryId, String keyword);
 
     ProductDetailResponse getProductById(Long id);
 

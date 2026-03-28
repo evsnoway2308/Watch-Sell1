@@ -76,11 +76,8 @@ public class SePayPollingService {
         // Try to find if any pending order's paymentRef is included in the transfer content
         // E.g., user might send "Thanh toan don hang DH123456" -> we look for DH123456
         
-        // This is a simplified approach: we can fetch all PENDING orders and check if their ref is in the content
-        // Or we can extract DHXXXXXX from content and query db.
-        
-        // Let's rely on finding by substring
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("DH[A-Z0-9]{5,}");
+        // Use exact length (6 chars) to prevent greedy matching like DH123456XYZ
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("DH[A-Z0-9]{6}");
         java.util.regex.Matcher matcher = pattern.matcher(content);
         
         String extractedRef = null;
@@ -96,6 +93,7 @@ public class SePayPollingService {
                     order.setStatus("PAID");
                     orderRepository.save(order);
                     log.info("Order {} updated to PAID via SePay Polling (Ref: {})", order.getId(), extractedRef);
+                    break; // stop processing after applying payment to one order to avoid duplicate processing on collision
                 } else {
                     log.warn("Amount mismatch for Order {}. Expected: {}, Received: {}", 
                             order.getId(), order.getTotalAmount(), amountIn);

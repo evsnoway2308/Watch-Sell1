@@ -33,8 +33,9 @@ public class ProductController {
     public ResponseEntity<Page<ProductResponse>> getAllProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) Long categoryId) {
-        return ResponseEntity.ok(productService.getAllProducts(page, size, categoryId));
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String keyword) {
+        return ResponseEntity.ok(productService.getAllProducts(page, size, categoryId, keyword));
     }
 
     @GetMapping("/{id}")
