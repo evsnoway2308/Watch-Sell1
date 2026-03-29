@@ -1,7 +1,12 @@
 package com.example.demo.service;
 
+import com.example.demo.dto.request.OrderRequest;
 import com.example.demo.model.Order;
+import com.example.demo.model.PaymentSession;
 import com.example.demo.repository.OrderRepository;
+import com.example.demo.repository.PaymentSessionRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,10 +18,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -26,13 +30,19 @@ public class SePayPollingService {
     private final RestTemplate restTemplate;
     private final OrderRepository orderRepository;
     private final ObjectMapper objectMapper;
+    private final QrPaymentService qrPaymentService;
+    private final OrderService orderService;
+    private final PaymentSessionRepository paymentSessionRepository;
 
-    @Value("${SEPAY_API_TOKEN}")
+
+
+    @Value("${SEPAY_API_TOKEN:PLACEHOLDER}")
     private String apiToken;
 
-    private static final String SEPAY_API_URL = "https://my.sepay.vn/userapi/transactions/list?account_number=4506630423&limit=20";
+    private static final String SEPAY_API_URL =
+            "https://my.sepay.vn/userapi/transactions/list?account_number=4506630423&limit=20";
 
-    @Scheduled(fixedDelay = 60000) // Run every 60 seconds
+    @Scheduled(fixedDelay = 30000) // Run every 30 seconds
     @Transactional
     public void fetchAndProcessTransactions() {
         if (apiToken == null || apiToken.isEmpty() || "PLACEHOLDER".equals(apiToken)) {
@@ -73,31 +83,62 @@ public class SePayPollingService {
     }
 
     private void processTransaction(double amountIn, String content) {
-        // Try to find if any pending order's paymentRef is included in the transfer content
-        // E.g., user might send "Thanh toan don hang DH123456" -> we look for DH123456
-        
-        // Use exact length (6 chars) to prevent greedy matching like DH123456XYZ
+        // Extract paymentRef pattern DH + 6 alphanumeric chars
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("DH[A-Z0-9]{6}");
         java.util.regex.Matcher matcher = pattern.matcher(content);
-        
+
         String extractedRef = null;
         if (matcher.find()) {
             extractedRef = matcher.group();
         }
 
-        if (extractedRef != null) {
-            List<Order> matchingOrders = orderRepository.findByPaymentRefAndStatus(extractedRef, "PENDING");
-            
-            for (Order order : matchingOrders) {
-                if (amountIn >= order.getTotalAmount()) {
-                    order.setStatus("PAID");
-                    orderRepository.save(order);
-                    log.info("Order {} updated to PAID via SePay Polling (Ref: {})", order.getId(), extractedRef);
-                    break; // stop processing after applying payment to one order to avoid duplicate processing on collision
+        if (extractedRef == null) return;
+
+        final String ref = extractedRef;
+
+        // 1. Check NEW flow: QR Payment Sessions (order NOT yet created)
+        Optional<PaymentSession> sessionOpt = qrPaymentService.findByPaymentRef(ref);
+        if (sessionOpt.isPresent()) {
+            PaymentSession session = sessionOpt.get();
+            if ("PENDING".equals(session.getStatus())) {
+                if (amountIn >= session.getAmount()) {
+                    try {
+                        // Mark session as PAID and save
+                        session.setStatus("PAID");
+                        paymentSessionRepository.save(session);
+
+                        // Create the actual order now that payment is confirmed
+                        OrderRequest orderRequest = objectMapper.readValue(session.getOrderData(), OrderRequest.class);
+                        String username = session.getUser().getUsername();
+
+                        Order createdOrder = orderService.createOrderAfterPayment(username, orderRequest, ref);
+
+                        log.info("QR Payment confirmed for ref={}. Order {} created for user={}.",
+                                ref, createdOrder.getId(), username);
+                    } catch (Exception e) {
+                        log.error("Failed to create order after QR payment for ref={}: {}", ref, e.getMessage(), e);
+                        // Revert session status so it can be retried? Keep PAID to avoid duplicate
+                        session.setStatus("PAID"); // still mark PAID to avoid retry
+                    }
                 } else {
-                    log.warn("Amount mismatch for Order {}. Expected: {}, Received: {}", 
-                            order.getId(), order.getTotalAmount(), amountIn);
+                    log.warn("Amount mismatch for QR session ref={}. Expected: {}, Received: {}",
+                            ref, session.getAmount(), amountIn);
                 }
+            }
+            return; // Don't process old-flow orders for same ref
+        }
+
+        // 2. Fallback: OLD flow - check existing PENDING orders (legacy support)
+        List<Order> matchingOrders = orderRepository.findByPaymentRefAndStatus(ref, "PENDING");
+        for (Order order : matchingOrders) {
+            if (amountIn >= order.getTotalAmount()) {
+                order.setStatus("PAID");
+                orderRepository.save(order);
+                log.info("Order {} updated to PAID via SePay Polling (Ref: {})", order.getId(), ref);
+                break;
+            } else {
+                log.warn("Amount mismatch for Order {}. Expected: {}, Received: {}",
+                        order.getId(), order.getTotalAmount(), amountIn);
             }
         }
     }

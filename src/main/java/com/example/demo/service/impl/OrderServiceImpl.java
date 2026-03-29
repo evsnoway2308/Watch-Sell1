@@ -25,6 +25,38 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public Order createOrder(String username, OrderRequest request) {
+        // This method handles COD orders only.
+        // BANK_TRANSFER/QR orders go through QrPaymentService.initiatePayment() + createOrderAfterPayment()
+        if ("BANK_TRANSFER".equalsIgnoreCase(request.getPaymentMethod())
+                || "SEPAY".equalsIgnoreCase(request.getPaymentMethod())) {
+            throw new RuntimeException("Use QR payment flow for BANK_TRANSFER orders.");
+        }
+        Order order = buildOrder(username, request);
+        order.setStatus("PENDING");
+        return orderRepository.save(order);
+    }
+
+    @Override
+    @Transactional
+    public Order createOrderAfterPayment(String username, OrderRequest request, String paymentRef) {
+        // Reuse the same order creation logic
+        Order order = buildOrder(username, request);
+        order.setPaymentRef(paymentRef);
+        order.setStatus("PAID"); // Payment is already confirmed
+
+        // Generate QR URL (for record keeping)
+        String qrUrl = String.format(
+                "https://img.vietqr.io/image/BIDV-96247111204-compact2.png?amount=%d&addInfo=%s&accountName=NGUYEN%%20DUC%%20KHANH",
+                order.getTotalAmount().intValue(), paymentRef);
+        order.setQrCodeUrl(qrUrl);
+
+        return orderRepository.save(order);
+    }
+
+    /**
+     * Builds an Order object from request without saving - shared logic.
+     */
+    private Order buildOrder(String username, OrderRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -37,16 +69,9 @@ public class OrderServiceImpl implements OrderService {
         order.setPaymentMethod(request.getPaymentMethod());
         order.setStatus("PENDING");
 
-        // Generate random paymentRef for BANK_TRANSFER or SEPAY
-        if ("BANK_TRANSFER".equalsIgnoreCase(request.getPaymentMethod()) || "SEPAY".equalsIgnoreCase(request.getPaymentMethod())) {
-            String randomStr = java.util.UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-            order.setPaymentRef("DH" + randomStr);
-        }
-
         List<OrderItem> orderItems = new ArrayList<>();
         double totalAmount = 0;
 
-        // Check if items are provided in the request (Direct Checkout / Buy Now)
         if (request.getItems() != null && !request.getItems().isEmpty()) {
             for (OrderItemRequest itemReq : request.getItems()) {
                 Product product = productRepository.findById(itemReq.getProductId())
@@ -56,7 +81,6 @@ public class OrderServiceImpl implements OrderService {
                     throw new RuntimeException("Not enough stock for product: " + product.getName());
                 }
 
-                // Deduct stock
                 product.setStock(product.getStock() - itemReq.getQuantity());
                 productRepository.save(product);
 
@@ -65,12 +89,10 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setProduct(product);
                 orderItem.setQuantity(itemReq.getQuantity());
                 orderItem.setPrice(product.getPrice());
-
                 orderItems.add(orderItem);
                 totalAmount += product.getPrice() * itemReq.getQuantity();
             }
         } else {
-            // Fallback to cart-based order
             Cart cart = cartRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Cart not found"));
 
@@ -85,7 +107,6 @@ public class OrderServiceImpl implements OrderService {
                     throw new RuntimeException("Not enough stock for product: " + product.getName());
                 }
 
-                // Deduct stock
                 product.setStock(product.getStock() - cartItem.getQuantity());
                 productRepository.save(product);
 
@@ -94,12 +115,11 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setProduct(product);
                 orderItem.setQuantity(cartItem.getQuantity());
                 orderItem.setPrice(product.getPrice());
-
                 orderItems.add(orderItem);
                 totalAmount += product.getPrice() * cartItem.getQuantity();
             }
 
-            // Clear cart ONLY for cart-based orders
+            // Clear cart
             cart.getItems().clear();
             cartRepository.save(cart);
         }
@@ -107,19 +127,10 @@ public class OrderServiceImpl implements OrderService {
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);
 
-        Order savedOrder = orderRepository.save(order);
-
-        // Generate QR Code URL for Bank Transfer
-        if ("BANK_TRANSFER".equalsIgnoreCase(savedOrder.getPaymentMethod()) || "SEPAY".equalsIgnoreCase(savedOrder.getPaymentMethod())) {
-            // Using VietQR format with SePay QR generator or VietQR directly.
-            // Bank: BIDV, Acc: 450630423, Name: NGUYEN DUC KHANH
-            String qrUrl = String.format("https://img.vietqr.io/image/BIDV-96247111204-compact2.png?amount=%d&addInfo=%s&accountName=NGUYEN%%20DUC%%20KHANH", 
-                    savedOrder.getTotalAmount().intValue(), savedOrder.getPaymentRef());
-            savedOrder.setQrCodeUrl(qrUrl);
-        }
-
-        return savedOrder;
+        return order;
     }
+
+
 
     @Override
     @Transactional(readOnly = true)
