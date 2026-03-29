@@ -140,6 +140,20 @@ public class OrderServiceImpl implements OrderService {
     public Order updateOrderStatus(Long orderId, String status) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
+
+        // Restore inventory stock when transitioning from a non-cancelled state to CANCELLED
+        if ("CANCELLED".equalsIgnoreCase(status) && !"CANCELLED".equalsIgnoreCase(order.getStatus())) {
+            if (order.getOrderItems() != null) {
+                for (OrderItem item : order.getOrderItems()) {
+                    Product product = item.getProduct();
+                    if (product != null && item.getQuantity() != null) {
+                        product.setStock(product.getStock() + item.getQuantity());
+                        productRepository.save(product);
+                    }
+                }
+            }
+        }
+
         order.setStatus(status);
         return orderRepository.save(order);
     }
