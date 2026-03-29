@@ -102,6 +102,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public TokenResponse login(LoginRequest request) {
         List<String> authorities = new ArrayList<>();
+        String trueUsername;
 
         try {
             Authentication authentication = authenticationManager.authenticate(
@@ -113,12 +114,13 @@ public class AuthServiceImpl implements AuthService {
                     .map(GrantedAuthority::getAuthority)
                     .collect(Collectors.toList()));
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            trueUsername = authentication.getName();
         } catch (Exception e) {
-            throw new AppException("Tên đăng nhập hoặc mật khẩu không đúng");
+            throw new AppException("Tên đăng nhập, email hoặc mật khẩu không đúng");
         }
 
-        String accessToken = jwtService.generateAccessToken(request.getUsername(), authorities);
-        String refreshToken = jwtService.generateRefreshToken(request.getUsername(), authorities);
+        String accessToken = jwtService.generateAccessToken(trueUsername, authorities);
+        String refreshToken = jwtService.generateRefreshToken(trueUsername, authorities);
         return TokenResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
