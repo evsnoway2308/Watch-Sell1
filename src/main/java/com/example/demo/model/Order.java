@@ -34,7 +34,7 @@ public class Order {
     @Column(name = "payment_ref", unique = true)
     private String paymentRef;
 
-    @Transient
+    @Column(name = "qr_code_url", length = 1000)
     private String qrCodeUrl;
 
     @ManyToOne

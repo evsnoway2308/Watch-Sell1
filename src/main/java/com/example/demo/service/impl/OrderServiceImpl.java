@@ -25,38 +25,6 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public Order createOrder(String username, OrderRequest request) {
-        // This method handles COD orders only.
-        // BANK_TRANSFER/QR orders go through QrPaymentService.initiatePayment() + createOrderAfterPayment()
-        if ("BANK_TRANSFER".equalsIgnoreCase(request.getPaymentMethod())
-                || "SEPAY".equalsIgnoreCase(request.getPaymentMethod())) {
-            throw new RuntimeException("Use QR payment flow for BANK_TRANSFER orders.");
-        }
-        Order order = buildOrder(username, request);
-        order.setStatus("PENDING");
-        return orderRepository.save(order);
-    }
-
-    @Override
-    @Transactional
-    public Order createOrderAfterPayment(String username, OrderRequest request, String paymentRef) {
-        // Reuse the same order creation logic
-        Order order = buildOrder(username, request);
-        order.setPaymentRef(paymentRef);
-        order.setStatus("PAID"); // Payment is already confirmed
-
-        // Generate QR URL (for record keeping)
-        String qrUrl = String.format(
-                "https://img.vietqr.io/image/BIDV-96247111204-compact2.png?amount=%d&addInfo=%s&accountName=NGUYEN%%20DUC%%20KHANH",
-                order.getTotalAmount().intValue(), paymentRef);
-        order.setQrCodeUrl(qrUrl);
-
-        return orderRepository.save(order);
-    }
-
-    /**
-     * Builds an Order object from request without saving - shared logic.
-     */
-    private Order buildOrder(String username, OrderRequest request) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -69,9 +37,17 @@ public class OrderServiceImpl implements OrderService {
         order.setPaymentMethod(request.getPaymentMethod());
         order.setStatus("PENDING");
 
+        // Generate paymentRef for BANK_TRANSFER
+        if ("BANK_TRANSFER".equalsIgnoreCase(request.getPaymentMethod())
+                || "SEPAY".equalsIgnoreCase(request.getPaymentMethod())) {
+            String randomStr = java.util.UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+            order.setPaymentRef("DH" + randomStr);
+        }
+
         List<OrderItem> orderItems = new ArrayList<>();
         double totalAmount = 0;
 
+        // Direct checkout (Buy Now) with specific items
         if (request.getItems() != null && !request.getItems().isEmpty()) {
             for (OrderItemRequest itemReq : request.getItems()) {
                 Product product = productRepository.findById(itemReq.getProductId())
@@ -93,6 +69,7 @@ public class OrderServiceImpl implements OrderService {
                 totalAmount += product.getPrice() * itemReq.getQuantity();
             }
         } else {
+            // Cart-based order
             Cart cart = cartRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Cart not found"));
 
@@ -119,7 +96,6 @@ public class OrderServiceImpl implements OrderService {
                 totalAmount += product.getPrice() * cartItem.getQuantity();
             }
 
-            // Clear cart
             cart.getItems().clear();
             cartRepository.save(cart);
         }
@@ -127,10 +103,24 @@ public class OrderServiceImpl implements OrderService {
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);
 
-        return order;
+        // Set QR URL trước khi save (vì qrCodeUrl giờ là @Column, cần persist vào DB)
+        if ("BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod())
+                || "SEPAY".equalsIgnoreCase(order.getPaymentMethod())) {
+            String qrUrl = String.format(
+                    "https://img.vietqr.io/image/BIDV-96247111204-compact2.png?amount=%d&addInfo=%s&accountName=NGUYEN%%20DUC%%20KHANH",
+                    (long) totalAmount, order.getPaymentRef());
+            order.setQrCodeUrl(qrUrl);
+        }
+
+        return orderRepository.save(order);
     }
 
-
+    @Override
+    @Transactional(readOnly = true)
+    public Order getOrderById(Long orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -152,7 +142,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
 
-        // Restore inventory stock when transitioning from a non-cancelled state to CANCELLED
+        // Restore stock when cancelling
         if ("CANCELLED".equalsIgnoreCase(status) && !"CANCELLED".equalsIgnoreCase(order.getStatus())) {
             if (order.getOrderItems() != null) {
                 for (OrderItem item : order.getOrderItems()) {
