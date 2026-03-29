@@ -15,4 +15,6 @@ public class ReviewResponse {
     private Date reviewDate;
     private String userName;
     private String userAvatar;
+    private Long productId;
+    private String productName;
 }

@@ -2,6 +2,7 @@ package com.example.demo.service.impl;
 
 import com.example.demo.dto.response.CartItemResponse;
 import com.example.demo.dto.response.CartResponse;
+import com.example.demo.exception.AppException;
 import com.example.demo.model.Cart;
 import com.example.demo.model.CartItem;
 import com.example.demo.model.Product;
@@ -58,7 +59,7 @@ public class CartServiceImpl implements CartService {
                 .orElse(new CartItem(null, 0, cart, product));
 
         if (cartItem.getQuantity() + quantity > product.getStock()) {
-            throw new RuntimeException("Số lượng yêu cầu vượt quá số lượng hàng trong kho");
+            throw new AppException("Đã vượt quá số lượng hàng trong kho");
         }
 
         cartItem.setQuantity(cartItem.getQuantity() + quantity);
@@ -70,13 +71,13 @@ public class CartServiceImpl implements CartService {
     public void updateQuantity(Long productId, Integer quantity) {
         Cart cart = getOrCreateCart();
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
 
         CartItem cartItem = cartItemRepository.findByCartAndProduct(cart, product)
                 .orElseThrow(() -> new RuntimeException("Item not in cart"));
 
         if (quantity > product.getStock()) {
-            throw new RuntimeException("Số lượng yêu cầu vượt quá số lượng hàng trong kho");
+            throw new AppException("Đã vượt quá số lượng hàng trong kho");
         }
 
         if (quantity <= 0) {
@@ -92,7 +93,7 @@ public class CartServiceImpl implements CartService {
     public void removeFromCart(Long productId) {
         Cart cart = getOrCreateCart();
         Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm"));
 
         CartItem cartItem = cartItemRepository.findByCartAndProduct(cart, product)
                 .orElseThrow(() -> new RuntimeException("Item not in cart"));
@@ -111,7 +112,7 @@ public class CartServiceImpl implements CartService {
     private Cart getOrCreateCart() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new AppException("User not found"));
 
         return cartRepository.findByUser(user)
                 .orElseGet(() -> {

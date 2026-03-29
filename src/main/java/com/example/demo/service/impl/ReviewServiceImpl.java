@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -92,6 +94,21 @@ public class ReviewServiceImpl implements ReviewService {
         reviewRepository.delete(review);
     }
 
+    @Override
+    @Transactional
+    public void deleteReviewByAdmin(Long reviewId) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy đánh giá"));
+        reviewRepository.delete(review);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ReviewResponse> getAllReviewsForAdmin(Pageable pageable) {
+        return reviewRepository.findAllByOrderByReviewDateDesc(pageable)
+                .map(this::mapToResponse);
+    }
+
     private ReviewResponse mapToResponse(Review review) {
         return ReviewResponse.builder()
                 .id(review.getId())
@@ -100,6 +117,8 @@ public class ReviewServiceImpl implements ReviewService {
                 .reviewDate(review.getReviewDate())
                 .userName(review.getUser() != null ? review.getUser().getName() : "Ẩn danh")
                 .userAvatar(review.getUser() != null ? review.getUser().getAvatarUrl() : null)
+                .productId(review.getProduct() != null ? review.getProduct().getId() : null)
+                .productName(review.getProduct() != null ? review.getProduct().getName() : null)
                 .build();
     }
 }
