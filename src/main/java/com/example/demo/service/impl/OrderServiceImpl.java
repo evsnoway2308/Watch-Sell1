@@ -22,11 +22,34 @@ public class OrderServiceImpl implements OrderService {
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
 
+    /**
+     * Tạo đơn hàng COD ngay.
+     * Chỉ dùng cho COD - không dùng cho BANK_TRANSFER.
+     */
     @Override
     @Transactional
     public Order createOrder(String username, OrderRequest request) {
+        Order order = buildAndSaveOrder(username, request, "PENDING", null);
+        return order;
+    }
+
+    /**
+     * Tạo đơn hàng SAU KHI thanh toán QR đã được xác nhận.
+     * Gọi bởi SePayPollingService khi SePay xác nhận giao dịch.
+     * Lúc này mới trừ kho và lưu đơn hàng vào DB.
+     */
+    @Override
+    @Transactional
+    public Order createOrderAfterPayment(String username, OrderRequest request, String paymentRef) {
+        return buildAndSaveOrder(username, request, "PAID", paymentRef);
+    }
+
+    /**
+     * Logic dùng chung: tạo order, trừ kho, xóa giỏ hàng (nếu cart-based).
+     */
+    private Order buildAndSaveOrder(String username, OrderRequest request, String status, String paymentRef) {
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new RuntimeException("User not found: " + username));
 
         Order order = new Order();
         order.setUser(user);
@@ -35,41 +58,36 @@ public class OrderServiceImpl implements OrderService {
         order.setPhoneNumber(request.getPhoneNumber());
         order.setNotes(request.getNotes());
         order.setPaymentMethod(request.getPaymentMethod());
-        order.setStatus("PENDING");
-
-        // Generate paymentRef for BANK_TRANSFER
-        if ("BANK_TRANSFER".equalsIgnoreCase(request.getPaymentMethod())
-                || "SEPAY".equalsIgnoreCase(request.getPaymentMethod())) {
-            String randomStr = java.util.UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-            order.setPaymentRef("DH" + randomStr);
-        }
+        order.setStatus(status);
+        order.setPaymentRef(paymentRef);
 
         List<OrderItem> orderItems = new ArrayList<>();
         double totalAmount = 0;
 
-        // Direct checkout (Buy Now) with specific items
+        // Luồng "Buy Now" - có items cụ thể
         if (request.getItems() != null && !request.getItems().isEmpty()) {
             for (OrderItemRequest itemReq : request.getItems()) {
                 Product product = productRepository.findById(itemReq.getProductId())
                         .orElseThrow(() -> new RuntimeException("Product not found: " + itemReq.getProductId()));
 
                 if (product.getStock() < itemReq.getQuantity()) {
-                    throw new RuntimeException("Not enough stock for product: " + product.getName());
+                    throw new RuntimeException("Không đủ hàng trong kho: " + product.getName());
                 }
 
+                // Trừ kho
                 product.setStock(product.getStock() - itemReq.getQuantity());
                 productRepository.save(product);
 
-                OrderItem orderItem = new OrderItem();
-                orderItem.setOrder(order);
-                orderItem.setProduct(product);
-                orderItem.setQuantity(itemReq.getQuantity());
-                orderItem.setPrice(product.getPrice());
-                orderItems.add(orderItem);
+                OrderItem item = new OrderItem();
+                item.setOrder(order);
+                item.setProduct(product);
+                item.setQuantity(itemReq.getQuantity());
+                item.setPrice(product.getPrice());
+                orderItems.add(item);
                 totalAmount += product.getPrice() * itemReq.getQuantity();
             }
         } else {
-            // Cart-based order
+            // Luồng từ giỏ hàng
             Cart cart = cartRepository.findByUser(user)
                     .orElseThrow(() -> new RuntimeException("Cart not found"));
 
@@ -81,36 +99,29 @@ public class OrderServiceImpl implements OrderService {
                 Product product = cartItem.getProduct();
 
                 if (product.getStock() < cartItem.getQuantity()) {
-                    throw new RuntimeException("Not enough stock for product: " + product.getName());
+                    throw new RuntimeException("Không đủ hàng trong kho: " + product.getName());
                 }
 
+                // Trừ kho
                 product.setStock(product.getStock() - cartItem.getQuantity());
                 productRepository.save(product);
 
-                OrderItem orderItem = new OrderItem();
-                orderItem.setOrder(order);
-                orderItem.setProduct(product);
-                orderItem.setQuantity(cartItem.getQuantity());
-                orderItem.setPrice(product.getPrice());
-                orderItems.add(orderItem);
+                OrderItem item = new OrderItem();
+                item.setOrder(order);
+                item.setProduct(product);
+                item.setQuantity(cartItem.getQuantity());
+                item.setPrice(product.getPrice());
+                orderItems.add(item);
                 totalAmount += product.getPrice() * cartItem.getQuantity();
             }
 
+            // Xóa giỏ hàng sau khi đặt
             cart.getItems().clear();
             cartRepository.save(cart);
         }
 
         order.setOrderItems(orderItems);
         order.setTotalAmount(totalAmount);
-
-        // Set QR URL trước khi save (vì qrCodeUrl giờ là @Column, cần persist vào DB)
-        if ("BANK_TRANSFER".equalsIgnoreCase(order.getPaymentMethod())
-                || "SEPAY".equalsIgnoreCase(order.getPaymentMethod())) {
-            String qrUrl = String.format(
-                    "https://img.vietqr.io/image/BIDV-96247111204-compact2.png?amount=%d&addInfo=%s&accountName=NGUYEN%%20DUC%%20KHANH",
-                    (long) totalAmount, order.getPaymentRef());
-            order.setQrCodeUrl(qrUrl);
-        }
 
         return orderRepository.save(order);
     }
@@ -140,9 +151,9 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public Order updateOrderStatus(Long orderId, String status) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found with id: " + orderId));
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
 
-        // Restore stock when cancelling
+        // Hoàn kho khi hủy đơn
         if ("CANCELLED".equalsIgnoreCase(status) && !"CANCELLED".equalsIgnoreCase(order.getStatus())) {
             if (order.getOrderItems() != null) {
                 for (OrderItem item : order.getOrderItems()) {

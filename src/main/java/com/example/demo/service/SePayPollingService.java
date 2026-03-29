@@ -1,7 +1,10 @@
 package com.example.demo.service;
 
+import com.example.demo.dto.request.OrderRequest;
 import com.example.demo.model.Order;
+import com.example.demo.model.PaymentSession;
 import com.example.demo.repository.OrderRepository;
+import com.example.demo.repository.PaymentSessionRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,7 +31,10 @@ public class SePayPollingService {
 
     private final RestTemplate restTemplate;
     private final OrderRepository orderRepository;
+    private final PaymentSessionRepository paymentSessionRepository;
     private final ObjectMapper objectMapper;
+    private final QrPaymentService qrPaymentService;
+    private final OrderService orderService;
 
     @Value("${SEPAY_API_TOKEN:PLACEHOLDER}")
     private String apiToken;
@@ -36,9 +43,11 @@ public class SePayPollingService {
             "https://my.sepay.vn/userapi/transactions/list?account_number=4506630423&limit=20";
 
     /**
-     * Mỗi 30 giây: gọi SePay API lấy giao dịch mới nhất,
-     * tìm đơn hàng PENDING khớp với nội dung chuyển khoản,
-     * cập nhật status = PAID nếu số tiền đủ.
+     * Mỗi 30 giây poll SePay API kiểm tra giao dịch mới.
+     * Khi tìm thấy giao dịch khớp PaymentSession PENDING:
+     *   → Đánh dấu session PAID
+     *   → Tạo đơn hàng + trừ kho (createOrderAfterPayment)
+     * Frontend đang poll /check-payment/{ref} sẽ phát hiện status=PAID → thông báo thành công.
      */
     @Scheduled(fixedDelay = 30000)
     @Transactional
@@ -73,7 +82,7 @@ public class SePayPollingService {
                     }
                 }
             } else {
-                log.error("SePay API trả về lỗi. Status: {}", response.getStatusCode());
+                log.error("SePay API lỗi. Status: {}", response.getStatusCode());
             }
         } catch (Exception e) {
             log.error("Lỗi khi polling SePay API: {}", e.getMessage(), e);
@@ -81,7 +90,7 @@ public class SePayPollingService {
     }
 
     private void processTransaction(double amountIn, String content) {
-        // Tìm mã đơn hàng dạng DH + 6 ký tự alphanumeric
+        // Tìm mã dạng DH + 6 ký tự
         Pattern pattern = Pattern.compile("DH[A-Z0-9]{6}");
         Matcher matcher = pattern.matcher(content);
 
@@ -89,19 +98,47 @@ public class SePayPollingService {
 
         String paymentRef = matcher.group();
 
-        // Tìm đơn hàng PENDING có paymentRef khớp
-        List<Order> matchingOrders = orderRepository.findByPaymentRefAndStatus(paymentRef, "PENDING");
+        // Kiểm tra PaymentSession (QR flow) - chưa tạo đơn hàng
+        Optional<PaymentSession> sessionOpt = paymentSessionRepository.findByPaymentRef(paymentRef);
+        if (sessionOpt.isPresent()) {
+            PaymentSession session = sessionOpt.get();
 
+            if (!"PENDING".equals(session.getStatus())) return; // Đã xử lý rồi
+
+            if (amountIn >= session.getAmount()) {
+                try {
+                    // 1. Đánh dấu session PAID để frontend biết
+                    session.setStatus("PAID");
+                    paymentSessionRepository.save(session);
+
+                    // 2. Tạo đơn hàng + trừ kho (chỉ bây giờ mới làm)
+                    OrderRequest orderRequest = objectMapper.readValue(session.getOrderData(), OrderRequest.class);
+                    String username = session.getUser().getUsername();
+
+                    Order order = orderService.createOrderAfterPayment(username, orderRequest, paymentRef);
+
+                    log.info("✅ Thanh toán QR xác nhận! Đơn hàng #{} tạo thành công cho user={} (Ref: {})",
+                            order.getId(), username, paymentRef);
+
+                } catch (Exception e) {
+                    log.error("❌ Lỗi tạo đơn hàng sau thanh toán ref={}: {}", paymentRef, e.getMessage(), e);
+                    // Session vẫn PAID để tránh xử lý lại, cần can thiệp thủ công nếu cần
+                }
+            } else {
+                log.warn("⚠️ Số tiền không khớp ref={}. Cần: {}, Nhận: {}",
+                        paymentRef, session.getAmount(), amountIn);
+            }
+            return;
+        }
+
+        // Fallback: kiểm tra đơn hàng COD PENDING cũ (nếu có paymentRef)
+        List<Order> matchingOrders = orderRepository.findByPaymentRefAndStatus(paymentRef, "PENDING");
         for (Order order : matchingOrders) {
             if (amountIn >= order.getTotalAmount()) {
                 order.setStatus("PAID");
                 orderRepository.save(order);
-                log.info("✅ Đơn hàng #{} đã được cập nhật PAID (Ref: {}, Số tiền: {})",
-                        order.getId(), paymentRef, amountIn);
-                break; // Chỉ xử lý 1 đơn để tránh trùng lặp
-            } else {
-                log.warn("⚠️ Số tiền không khớp cho đơn #{} (Ref: {}). Yêu cầu: {}, Nhận: {}",
-                        order.getId(), paymentRef, order.getTotalAmount(), amountIn);
+                log.info("✅ Đơn hàng #{} cập nhật PAID (Ref: {})", order.getId(), paymentRef);
+                break;
             }
         }
     }

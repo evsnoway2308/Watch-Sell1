@@ -1,8 +1,11 @@
 package com.example.demo.controller;
 
 import com.example.demo.dto.request.OrderRequest;
+import com.example.demo.dto.response.PaymentSessionResponse;
 import com.example.demo.model.Order;
 import com.example.demo.service.OrderService;
+import com.example.demo.service.QrPaymentService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -10,6 +13,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -18,11 +22,11 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final QrPaymentService qrPaymentService;
+    private final ObjectMapper objectMapper;
 
     /**
-     * Tạo đơn hàng (COD hoặc BANK_TRANSFER).
-     * Với BANK_TRANSFER: trả về order có qrCodeUrl và paymentRef.
-     * SePay polling service sẽ tự động cập nhật status=PAID khi nhận thanh toán.
+     * Tạo đơn COD trực tiếp.
      */
     @PostMapping
     @PreAuthorize("isAuthenticated()")
@@ -33,12 +37,34 @@ public class OrderController {
     }
 
     /**
-     * Lấy đơn hàng theo ID - dùng để SepayPaymentComponent polling trạng thái thanh toán.
+     * Khởi tạo phiên thanh toán QR.
+     * KHÔNG tạo đơn hàng - chỉ tạo PaymentSession với QR code.
+     * Frontend sẽ hiển thị QR và poll /check-payment/{ref}.
+     * Khi SePay xác nhận → đơn hàng mới được tạo + kho bị trừ.
      */
-    @GetMapping("/{id}")
+    @PostMapping("/initiate-qr-payment")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Order> getOrderById(@PathVariable Long id) {
-        return ResponseEntity.ok(orderService.getOrderById(id));
+    public ResponseEntity<PaymentSessionResponse> initiateQrPayment(
+            Authentication authentication,
+            @RequestBody Map<String, Object> body) {
+
+        OrderRequest orderRequest = objectMapper.convertValue(body.get("orderRequest"), OrderRequest.class);
+        double totalAmount = Double.parseDouble(body.get("totalAmount").toString());
+
+        PaymentSessionResponse response = qrPaymentService.initiatePayment(
+                authentication.getName(), orderRequest, totalAmount);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Poll trạng thái thanh toán QR.
+     * Frontend gọi mỗi 5 giây.
+     * Khi status = PAID → frontend hiển thị thành công.
+     */
+    @GetMapping("/check-payment/{paymentRef}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PaymentSessionResponse> checkPayment(@PathVariable String paymentRef) {
+        return ResponseEntity.ok(qrPaymentService.checkPaymentStatus(paymentRef));
     }
 
     @GetMapping("/my-orders")
@@ -56,7 +82,7 @@ public class OrderController {
     @PutMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Order> updateOrderStatus(@PathVariable Long id,
-                                                    @RequestBody String status) {
+                                                   @RequestBody String status) {
         String cleanStatus = status.replace("\"", "");
         return ResponseEntity.ok(orderService.updateOrderStatus(id, cleanStatus));
     }
